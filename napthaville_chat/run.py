@@ -32,7 +32,7 @@ async def run(inputs: InputSchema, worker_nodes = None, orchestrator_node = None
     )
 
     target_persona_info_task = NapthaTask(
-        name = 'get_persona_info',
+        name = 'get_personal_info',
         fn = 'napthaville_module',
         worker_node = target_persona_node,
         orchestrator_node = orchestrator_node,
@@ -41,7 +41,7 @@ async def run(inputs: InputSchema, worker_nodes = None, orchestrator_node = None
 
     logger.info(f"Running init_persona_info_task with inputs: {init_persona_name}")
     init_persona_info = await init_persona_info_task(
-        task='get_persona_info', 
+        task='get_personal_info', 
         task_params={
             'persona_name': init_persona_name,
         }
