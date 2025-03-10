@@ -1,95 +1,36 @@
-import logging
-import json
-from typing import Dict
+from napthaville_chat.persona.persona import Persona
 from napthaville_chat.schemas import InputSchema
-from naptha_sdk.task import Task as NapthaTask
+from napthaville_chat.persona.cognitive_modules.plan import _chat_react, _wait_react
 
+async def run(module_run):
+    input_schema = InputSchema(**module_run["inputs"])
+    memory_deployments = module_run["memory_deployments"]
+    init_persona = Persona(input_schema.init_persona_name, memory_deployments[0])
+    target_persona = Persona(input_schema.target_persona_name, memory_deployments[0])
+    maze_data = input_schema.maze_data
+    reaction_mode = input_schema.reaction_mode
 
-logger = logging.getLogger(__name__)
-
-
-async def run(inputs: InputSchema, worker_nodes = None, orchestrator_node = None, flow_run = None, cfg: Dict = None):
-    logger.info(f"Running with inputs: {inputs}")
-    logger.info(f"Worker nodes: {worker_nodes}")
-    logger.info(f"Orchestrator node: {orchestrator_node}")
-
-    if len(worker_nodes) < 2:
-        init_persona_node = worker_nodes[0]
-        target_persona_node = worker_nodes[0]
-
-    init_persona_node = worker_nodes[0]
-    target_persona_node = worker_nodes[1]
-
-    init_persona_name = inputs.init_persona
-    target_persona_name = inputs.target_persona
-
-    init_persona_info_task = NapthaTask(
-        name = 'get_personal_info',
-        fn = 'napthaville_module',
-        worker_node = init_persona_node,
-        orchestrator_node = orchestrator_node,
-        flow_run = flow_run,
-    )
-
-    target_persona_info_task = NapthaTask(
-        name = 'get_personal_info',
-        fn = 'napthaville_module',
-        worker_node = target_persona_node,
-        orchestrator_node = orchestrator_node,
-        flow_run = flow_run,
-    )
-
-    logger.info(f"Running init_persona_info_task with inputs: {init_persona_name}")
-    init_persona_info = await init_persona_info_task(
-        task='get_personal_info', 
-        task_params={
-            'persona_name': init_persona_name,
-        }
-    )
-    init_persona_info = json.loads(init_persona_info)
-    # target_persona_info: {"name": "Maria Lopez", "act_description": "sleeping"}
-
-    target_persona_info = await target_persona_info_task(
-        task='get_personal_info', 
-        task_params={
-            'persona_name': target_persona_name,
-        }
-    )
-    target_persona_info = json.loads(target_persona_info)
-
-    logger.info(f"init_persona_info: {init_persona_info}")
-    logger.info(f"target_persona_info: {target_persona_info}")
-    logger.info(f"Type of init_persona_info: {type(init_persona_info)}")
-
-    init_persona_chat_params = {
-        'init_persona_name': init_persona_name,
-        'target_persona_name': target_persona_info['name'],
-        'target_persona_description': target_persona_info['act_description'],
-    }
-
-    target_persona_chat_params = {
-        'init_persona_name': target_persona_name,
-        'target_persona_name': init_persona_info['name'],
-        'target_persona_description': init_persona_info['act_description'],
-    }
-
-    curr_chat = []
-    for i in range(8):
-        init_persona_chat_params['curr_chat'] = json.dumps(curr_chat)
-        init_utterance = await init_persona_info_task(
-            task='get_utterence',
-            task_params=init_persona_chat_params,
+    # Load memories
+    await init_persona.load_memory()
+    await target_persona.load_memory()
+    
+    # react
+    if reaction_mode == "chat with":
+        await _chat_react(
+            maze_data=maze_data,
+            reaction_mode=reaction_mode,
+            init_persona=init_persona,
+            target_persona=target_persona
         )
-        logger.info(f"init_utterance: {init_utterance}")
+    elif reaction_mode == "wait":
+        await _wait_react(init_persona, reaction_mode)
 
-        target_persona_chat_params['curr_chat'] = json.dumps(json.loads(init_utterance)['curr_chat'])
-        target_utterance = await target_persona_info_task(
-            task='get_utterence',
-            task_params=target_persona_chat_params,
-        )
-        logger.info(f"target_utterance: {target_utterance}")
+    # save memories
+    await init_persona.save_memory()
+    await target_persona.save_memory()
 
-        curr_chat = json.loads(target_utterance)['curr_chat']
-        logger.info(f"curr_chat: {curr_chat}")
-
-    return json.dumps(curr_chat)
+    # return
+    return {
+        "init_persona": init_persona.scratch.to_dict(),
+        "target_persona": target_persona.scratch.to_dict(),
+    }
